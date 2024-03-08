@@ -1,8 +1,10 @@
 # ClinicalMamba
 
-This repository contains the implementation of prompt-based fine-tuning ClinicalMamba on n2c2 2018 shared task 1: [Cohort Selection for Clinical Trials](https://www.semanticscholar.org/paper/Cohort-selection-for-clinical-trials%3A-n2c2-2018-1-Stubbs-Filannino/29dfdb6bf2b44ea57525a6b89b72cb74413fb5a5). The ClinicalMamba: A Generative Clinical Language Model on Longitudinal Clinical Notes paper contains 2 unique ClinicalMamba models with different number of parameters: clinicalmamba-2.8b and clinicalmamba-130m. These two models are available here under mimic license.
-
+This repository contains the implementation of prompt-based fine-tuning ClinicalMamba on n2c2 2018 shared task 1: [Cohort Selection for Clinical Trials](https://www.semanticscholar.org/paper/Cohort-selection-for-clinical-trials%3A-n2c2-2018-1-Stubbs-Filannino/29dfdb6bf2b44ea57525a6b89b72cb74413fb5a5). 
 This is a classification task that identifies which patients meet and do not meet the identified selection criteria given in their longitudinal clinical notes.
+
+The ClinicalMamba: A Generative Clinical Language Model on Longitudinal Clinical Notes paper contains 2 unique ClinicalMamba models with different number of parameters: clinicalmamba-2.8b and clinicalmamba-130m. These two models are available here under mimic license.
+
 
 ## Dependencies
 
