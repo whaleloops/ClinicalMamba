@@ -25,7 +25,7 @@ conda activate mixtral
 
 ## Download / preprocess data
 1. Download [raw n2c2 data folder](https://portal.dbmi.hms.harvard.edu/projects/n2c2-nlp/) train and n2c2-t1_gold_standard_test_data, and put them under ./data
-2. Proprcesss the data by running the notebook: ./preprocess.ipynb. It will transform from xml to json format, where each instance is a dictionary input is 'text' and output should start with ‘label’. Example in image below:
+2. Proprcesss the data by running the notebook: ./preprocess/preprocess.ipynb. It will transform from xml to json format, where each instance is a dictionary input is 'text' and output should start with ‘label’. Example in image below:
 ![](image/image2024-2-20_11-57-14.png)
 3. Define your labels and associated prompts here ./config_labels.py. Example in image below:
 ![](image/image2024-2-20_12-20-21.png)
