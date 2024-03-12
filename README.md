@@ -39,6 +39,16 @@ conda activate mixtral
 TODO
 
 ## Citation
+```
+@misc{yang2024clinicalmamba,
+      title={ClinicalMamba: A Generative Clinical Language Model on Longitudinal Clinical Notes}, 
+      author={Zhichao Yang and Avijit Mitra and Sunjae Kwon and Hong Yu},
+      year={2024},
+      eprint={2403.05795},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL}
+}
+```
 
 ## License
 
