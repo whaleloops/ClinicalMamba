@@ -36,7 +36,56 @@ conda activate mixtral
 
 
 ## Train and Eval
-TODO
+
+To test the perplexity of clinical mamba:
+```
+CUDA_VISIBLE_DEVICES=0 python test.py \
+                --overwrite_output_dir --seed 42 --data_seed 42 --ddp_find_unused_parameters False \
+                --data_path ./preprocess \
+                --model_name mamba \
+                --tokenizer_name PATH_TO_MODEL/clinicalmamba-130m \
+                --model_name_or_path PATH_TO_MODEL/clinicalmamba-130m \
+                --do_train --do_eval --max_seq_length 16002 \
+                --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --per_device_eval_batch_size 1 \
+                --logging_first_step \
+                --output_dir ./saved_models/mamba-test01
+```
+
+
+To test the perplexity of Asclepius:
+```
+CUDA_VISIBLE_DEVICES=0 python test.py \
+                --overwrite_output_dir --seed 42 --data_seed 42 \
+                --data_path ./preprocess \
+                --model_name gpt \
+                --tokenizer_name PATH_TO_MODEL/Asclepius-R-7B \
+                --model_name_or_path PATH_TO_MODEL/Asclepius-R-7B \
+                --do_train --do_eval --max_seq_length 16002 \
+                --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --per_device_eval_batch_size 1 \
+                --logging_first_step \
+                --output_dir ./saved_models/asclepius-test01
+```
+
+
+To finetune on Cohort Selection for Clinical Trials:
+```
+CUDA_VISIBLE_DEVICES=0 python main.py \
+                --seed 3407 --data_seed 3407 --ddp_find_unused_parameters False \
+                --data_path ./data \
+                --config_name PATH_TO_MODEL/clinicalmamba-130m \
+                --tokenizer_name PATH_TO_MODEL/clinicalmamba-130m \
+                --model_name_or_path PATH_TO_MODEL/clinicalmamba-130m \
+                --do_train --do_eval --max_seq_length 15004 \
+                --per_device_train_batch_size 2 --gradient_accumulation_steps 4 --per_device_eval_batch_size 2 \
+                --adam_beta1 0.9 --adam_beta2 0.95 --adam_epsilon 1e-5  \
+                --learning_rate 0.000445 --weight_decay 1e-2 --num_train_epochs 12 \
+                --lr_scheduler_type linear --warmup_ratio 0.15 \
+                --logging_steps 50 \
+                --evaluation_strategy epoch --save_strategy no \
+                --logging_first_step \
+                --output_dir ./saved_models/clinicalmamba-test01
+```         
+
 
 ## Citation
 ```
