@@ -22,7 +22,7 @@ Full environment setting is lised [here](conda-environment.yaml) and can be inst
 
 ```
 conda env create -f conda-environment.yaml
-conda activate mixtral
+conda activate mamba_env
 ```
 
 ## Download / preprocess data
