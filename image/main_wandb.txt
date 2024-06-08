@@ -1,0 +1,398 @@
+
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright 2020 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+""" Finetuning the library models for sequence classification on GLUE."""
+# You can also adapt this script on your own text classification task. Pointers for this are left as comments.
+
+import os
+import torch
+from torch import nn
+from torch.nn.parallel import DistributedDataParallel
+import sys
+import numpy as np
+# from train_parser import generate_parser, print_metrics
+# from train_utils import generate_output_folder_name, generate_model
+# from find_threshold import find_threshold_micro
+
+import logging
+import random
+import sys
+from dataclasses import dataclass, field
+from typing import Optional
+
+import numpy as np
+
+import transformers
+
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    HfArgumentParser,
+    Trainer,
+    TrainingArguments,
+    set_seed,
+    TrainerCallback,
+    EvalPrediction,
+    TrainingArguments
+)
+from transformers.trainer_utils import get_last_checkpoint, is_main_process
+
+from trainer.model import MambaLMHForPT
+from trainer.trainer_mamba import MambaTrainer
+from trainer.data import DataCollatorForMambaDataset, proc_labels, proc_note, proc_prompt
+from trainer.metrics import all_metrics, find_threshold_micro
+from trainer.config_labels import label2index, index2prompt
+
+
+from datasets import load_dataset, disable_caching
+disable_caching()
+
+torch.autograd.set_detect_anomaly(True)
+import wandb
+logger = logging.getLogger(__name__)
+
+
+class EnsureMinLR(TrainerCallback):
+    """A callback to ensure the learning rate never goes below a minimum threshold."""
+    def __init__(self, min_lr):
+        self.min_lr = min_lr
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        """Adjust the learning rate at the beginning of each step."""
+        for param_group in kwargs['optimizer'].param_groups:
+            if param_group['lr'] < self.min_lr:
+                param_group['lr'] = self.min_lr
+
+@dataclass
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+
+    Using `HfArgumentParser` we can turn this class
+    into argparse arguments to be able to specify them on
+    the command line.
+    """
+
+    max_seq_length: int = field(
+        default=128,
+        metadata={
+            "help": "The maximum total input sequence length after tokenization. Sequences longer "
+            "than this will be truncated, sequences shorter will be padded."
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+    )
+    pad_to_max_length: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to pad all samples to `max_seq_length`. "
+            "If False, will pad the samples dynamically when batching to the maximum length in the batch."
+        },
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
+            "value if set."
+        },
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+            "value if set."
+        },
+    )
+    data_path: Optional[str] = field(
+        default=None, metadata={"help": "path to json data folder"}
+    )
+    global_attention_strides: Optional[int] = field(
+        default=3,
+        metadata={
+            "help": "how many gap between each (longformer) golabl attention token in prompt code descriptions, set to 1 for maximum accuracy, but requires more gpu memory."
+        },
+    )
+
+
+@dataclass
+class ModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
+    """
+
+    model_name_or_path: str = field(
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+    )
+    config_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+    )
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+    )
+    use_auth_token: bool = field(
+        default=False,
+        metadata={
+            "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
+            "with private models)."
+        },
+    )
+    finetune_terms: str = field(
+        default="no",
+        metadata={"help": "what terms to train like bitfit (bias)."},
+    )
+
+def main(): 
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # If we pass only one argument to the script and it's the path to a json file,
+        # let's parse it to get our arguments.
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+    else:
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    training_args.broadcast_buffers = False
+        
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    logger.setLevel(logging.INFO if training_args.should_log else logging.WARN)
+
+    # if is_main_process(training_args.local_rank):
+    #     wandb.init(project="ClinicalMamba", entity="whaleloops")
+
+    # Log on each process the small summary:
+    logger.warning(
+        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+    )
+    # Set the verbosity to info of the Transformers logger (on main process only):
+    if training_args.should_log:
+        transformers.utils.logging.set_verbosity_info()
+        transformers.utils.logging.enable_default_handler()
+        transformers.utils.logging.enable_explicit_format()
+    logger.info(f"Training/evaluation parameters {training_args}")
+
+    # Detecting last checkpoint.
+    last_checkpoint = None
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+        last_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
+            raise ValueError(
+                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
+                "Use --overwrite_output_dir to overcome."
+            )
+        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+            logger.info(
+                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
+                "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
+            )
+
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        use_fast=model_args.use_fast_tokenizer,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
+    tokenizer.padding_side='right'
+    tokenizer.truncation_side='left'
+    tokenizer.eos_token = "<|endoftext|>"
+    tokenizer.pad_token = tokenizer.eos_token
+
+    # kwargs_handlers = [DistributedDataParallelKwargs(find_unused_parameters=True)]
+    # accelerator = Accelerator(kwargs_handlers=kwargs_handlers)
+    label_no = tokenizer(" no")['input_ids'][0]
+    label_yes = tokenizer(" yes")['input_ids'][0]
+
+
+    raw_dataset = load_dataset('json', data_files=os.path.join(data_args.data_path,"data_train.json"), split='train')
+    # label_column_names = [k for k,v in raw_dataset.features.items() if k.startswith("label")]
+    # def tokenize_function(examples):
+    #     notes = proc_note(examples["text"])
+    #     prompts = proc_prompt(index2prompt)
+    #     notes = [a+"\n"+prompts for a in notes]
+    #     results = tokenizer(notes, padding="max_length", max_length=data_args.max_seq_length, truncation=True, return_tensors="pt")
+    #     # results = tokenizer(notes, padding="longest", return_tensors="pt")
+    #     labels = proc_labels(label_no, label_yes, examples, label2index)
+    #     results["label_ids"] = labels
+    #     return results 
+    #     # return tokenizer(examples["notes"], max_length=data_args.max_seq_length, truncation=True, return_tensors="pt")
+    # train_dataset = raw_dataset.map(tokenize_function, batched=True, batch_size=1000, remove_columns=label_column_names+["id"])
+
+    # raw_dataset = load_dataset('json', data_files=os.path.join(data_args.data_path,"data_val.json"), split='train')
+    # eval_dataset = raw_dataset.map(tokenize_function, batched=True, batch_size=1000, remove_columns=label_column_names+["id"])
+
+
+
+    # load config, model
+    config = AutoConfig.from_pretrained(
+        model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+        num_labels=2,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
+    config.label_yes = label_yes #4754
+    config.label_no = label_no #642
+    config.mask_token_id = tokenizer.mask_token_id #50254
+    model = MambaLMHForPT.from_pretrained(
+        pretrained_model_name = model_args.model_name_or_path,
+        device="cuda",
+        dtype=torch.float32,
+    )
+
+    def model_init():
+        model = MambaLMHForPT.from_pretrained(
+            pretrained_model_name = model_args.model_name_or_path,
+            device="cuda",
+            dtype=torch.float32,
+        )
+        return model
+
+
+    data_collator = DataCollatorForMambaDataset(tokenizer)
+
+
+    # Get the metric function
+    def compute_metrics(p: EvalPrediction):
+        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        y = p.label_ids==config.label_yes
+        threshold = find_threshold_micro(preds, y)
+        logger.info("best logits threshold:")
+        logger.info(str(threshold))
+        result = all_metrics(y, preds, k=[5, 8, 15], threshold=threshold)
+        return result
+    
+
+
+    # method
+    
+    sweep_config = {
+        'method': 'bayes',
+        "metric": {"goal": "maximize", "name": "eval/auc_micro.max"},
+        "early_terminate":{
+            "type": "hyperband",
+            "min_iter": 4,
+            "eta": 2
+        }
+    }
+    # hyperparameters
+    parameters_dict = {
+        'epochs': {
+            'value': 12
+            },
+        'batch_size': {
+            'values': [4, 8, 16, 32, 64]
+            },
+        'seed': {
+            'values': [42, 36, 3407]
+            },
+        'learning_rate': {
+            'distribution': 'log_uniform_values',
+            'min': 2e-5,
+            'max': 2e-3,
+        },
+        'lr_scheduler_type': {
+            'values': ["linear", "constant", "cosine"]
+        },
+        'warmup_ratio': {
+            'values': [0.05, 0.10, 0.15, 0.20]
+        },
+        'weight_decay': {
+            'values': [0.001, 0.01, 0.1, 0.2, 0.3]
+        },
+    }
+
+
+    sweep_config['parameters'] = parameters_dict
+
+
+    def train(config=None):
+        with wandb.init(config=config):
+            wandb.define_metric("eval/auc_micro", summary="last")
+            wandb.define_metric("eval/auc_micro", summary="max")
+            # set sweep configuration
+            config = wandb.config
+
+            # set training arguments
+            training_args = TrainingArguments(
+                output_dir='/home/zhichaoyang/mimic3/mimic3bench/2018_Clinical_Trial_Cohort_Selection/saved_models/mamba-sweep',
+                report_to='wandb',  # Turn on Weights & Biases logging
+                seed=config.seed,
+                data_seed=config.data_seed,
+                num_train_epochs=config.epochs,
+                learning_rate=config.learning_rate,
+                lr_scheduler_type=config.lr_scheduler_type,
+                warmup_ratio=config.warmup_ratio,
+                weight_decay=config.weight_decay,
+                per_device_train_batch_size=2,
+                gradient_accumulation_steps=config.batch_size,
+                per_device_eval_batch_size=2,
+                adam_beta1=0.9,
+                adam_beta2=0.95,
+                adam_epsilon=1e-5,
+                save_strategy='no',
+                evaluation_strategy='epoch',
+                logging_strategy='epoch',
+                load_best_model_at_end=False,
+                remove_unused_columns=False,
+                bf16=False,
+            )
+
+
+            # define training loop
+            trainer = MambaTrainer(
+                model_init=model_init,
+                args=training_args,
+                data_collator=data_collator,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
+                compute_metrics=compute_metrics
+            )
+
+
+            # start training loop
+            trainer.train()
+
+    sweep_id = wandb.sweep(sweep_config, project='clinicaltrial-sweep')
+    wandb.agent(sweep_id, train, count=32)
+
+
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    main()
+
+
+if __name__ == "__main__":
+    main()
