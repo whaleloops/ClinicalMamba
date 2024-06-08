@@ -3,7 +3,7 @@
 This repository contains the implementation of prompt-based fine-tuning ClinicalMamba on n2c2 2018 shared task 1: [Cohort Selection for Clinical Trials](https://www.semanticscholar.org/paper/Cohort-selection-for-clinical-trials%3A-n2c2-2018-1-Stubbs-Filannino/29dfdb6bf2b44ea57525a6b89b72cb74413fb5a5). 
 This is a classification task that identifies which patients meet and do not meet the identified selection criteria given in their longitudinal clinical notes.
 
-The ClinicalMamba: A Generative Clinical Language Model on Longitudinal Clinical Notes paper contains 2 unique ClinicalMamba models with different number of parameters: clinicalmamba-2.8b and clinicalmamba-130m. These two models are currently under review and will be available under mimic license.
+The ClinicalMamba: A Generative Clinical Language Model on Longitudinal Clinical Notes paper contains 2 unique ClinicalMamba models with different number of parameters: [clinicalmamba-2.8b-hf](https://huggingface.co/whaleloops/clinicalmamba-2.8b-hf) and [clinicalmamba-130m-hf](https://huggingface.co/whaleloops/clinicalmamba-130m-hf).
 
 
 ## Dependencies
@@ -37,43 +37,45 @@ conda activate mixtral
 
 ## Train and Eval
 
-To finetune on Cohort Selection for Clinical Trials:
+To finetune on Cohort Selection for Clinical Trials with 2.8b model:
 ```
-CUDA_VISIBLE_DEVICES=0 python main.py \
+CUDA_VISIBLE_DEVICES=0 python main-hf.py \
                 --seed 3407 --data_seed 3407 --ddp_find_unused_parameters False \
                 --data_path ./data \
-                --config_name PATH_TO_MODEL/clinicalmamba-130m \
-                --tokenizer_name PATH_TO_MODEL/clinicalmamba-130m \
-                --model_name_or_path PATH_TO_MODEL/clinicalmamba-130m \
+                --config_name whaleloops/clinicalmamba-2.8b-hf \
+                --tokenizer_name whaleloops/clinicalmamba-2.8b-hf \
+                --model_name_or_path whaleloops/clinicalmamba-2.8b-hf \
                 --do_train --do_eval --max_seq_length 15004 \
-                --per_device_train_batch_size 2 --gradient_accumulation_steps 4 --per_device_eval_batch_size 2 \
+                --per_device_train_batch_size 1 --gradient_accumulation_steps 8 --per_device_eval_batch_size 1 \
                 --adam_beta1 0.9 --adam_beta2 0.95 --adam_epsilon 1e-5  \
-                --learning_rate 0.000445 --weight_decay 1e-2 --num_train_epochs 12 \
-                --lr_scheduler_type linear --warmup_ratio 0.15 \
-                --logging_steps 50 \
-                --evaluation_strategy epoch --save_strategy no \
-                --logging_first_step \
-                --output_dir ./saved_models/clinicalmamba-test01
-```         
-
-As an alternative, we could also run the huggingface implementation
-```
-CUDA_VISIBLE_DEVICES=0 python main.py \
-                --seed 3407 --data_seed 3407 --ddp_find_unused_parameters False \
-                --data_path ./data \
-                --config_name PATH_TO_HF_MODEL/clinicalmamba-130m \
-                --tokenizer_name PATH_TO_HF_MODEL/clinicalmamba-130m \
-                --model_name_or_path PATH_TO_HF_MODEL/clinicalmamba-130m \
-                --do_train --do_eval --max_seq_length 15004 \
-                --per_device_train_batch_size 2 --gradient_accumulation_steps 4 --per_device_eval_batch_size 2 \
-                --adam_beta1 0.9 --adam_beta2 0.95 --adam_epsilon 1e-5  \
-                --learning_rate 0.000445 --weight_decay 1e-2 --num_train_epochs 12 \
+                --learning_rate 0.000245 --weight_decay 1e-2 --num_train_epochs 12 \
                 --lr_scheduler_type linear --warmup_ratio 0.15 \
                 --logging_steps 50 \
                 --evaluation_strategy epoch --save_strategy no \
                 --logging_first_step \
                 --output_dir ./saved_models/clinicalmamba-test01-hf
-```       
+```
+
+
+For 130m model
+```
+CUDA_VISIBLE_DEVICES=0 python main-hf.py \
+                --seed 3407 --data_seed 3407 --ddp_find_unused_parameters False \
+                --data_path ./data \
+                --config_name PATH_TO_HF_MODEL/clinicalmamba-130m-hf \
+                --tokenizer_name PATH_TO_HF_MODEL/clinicalmamba-130m-hf \
+                --model_name_or_path PATH_TO_HF_MODEL/clinicalmamba-130m-hf \
+                --do_train --do_eval --max_seq_length 15004 \
+                --per_device_train_batch_size 2 --gradient_accumulation_steps 4 --per_device_eval_batch_size 2 \
+                --adam_beta1 0.9 --adam_beta2 0.95 --adam_epsilon 1e-5  \
+                --learning_rate 0.000445 --weight_decay 1e-2 --num_train_epochs 12 \
+                --lr_scheduler_type linear --warmup_ratio 0.15 \
+                --logging_steps 50 \
+                --evaluation_strategy epoch --save_strategy no \
+                --logging_first_step \
+                --output_dir ./saved_models/clinicalmamba-test02-hf
+```
+
 
 ## Citation
 ```
