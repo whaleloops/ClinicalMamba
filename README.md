@@ -8,13 +8,13 @@ The ClinicalMamba: A Generative Clinical Language Model on Longitudinal Clinical
 
 ## Dependencies
 
-* python=3.9.18
-* numpy=1.26.3
-* transformers=4.36.2
-* tokenizers=0.15.0
-* mamba-ssm=1.1.2
-* causal-conv1d=1.1.1
-* pytorch=2.1.2
+* python=3.12.2
+* numpy=1.26.4
+* transformers=4.39.1
+* tokenizers=0.15.2
+* mamba-ssm=1.2.0
+* causal-conv1d=1.2.0
+* pytorch=2.2.2
 * pytorch-cuda=12.1
 * scikit-learn=1.4.0 
 
