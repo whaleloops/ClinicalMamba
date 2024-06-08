@@ -37,36 +37,6 @@ conda activate mixtral
 
 ## Train and Eval
 
-To test the perplexity of clinical mamba:
-```
-CUDA_VISIBLE_DEVICES=0 python test.py \
-                --overwrite_output_dir --seed 42 --data_seed 42 --ddp_find_unused_parameters False \
-                --data_path ./preprocess \
-                --model_name mamba \
-                --tokenizer_name PATH_TO_MODEL/clinicalmamba-130m \
-                --model_name_or_path PATH_TO_MODEL/clinicalmamba-130m \
-                --do_train --do_eval --max_seq_length 16002 \
-                --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --per_device_eval_batch_size 1 \
-                --logging_first_step \
-                --output_dir ./saved_models/mamba-test01
-```
-
-
-To test the perplexity of Asclepius:
-```
-CUDA_VISIBLE_DEVICES=0 python test.py \
-                --overwrite_output_dir --seed 42 --data_seed 42 \
-                --data_path ./preprocess \
-                --model_name gpt \
-                --tokenizer_name PATH_TO_MODEL/Asclepius-R-7B \
-                --model_name_or_path PATH_TO_MODEL/Asclepius-R-7B \
-                --do_train --do_eval --max_seq_length 16002 \
-                --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --per_device_eval_batch_size 1 \
-                --logging_first_step \
-                --output_dir ./saved_models/asclepius-test01
-```
-
-
 To finetune on Cohort Selection for Clinical Trials:
 ```
 CUDA_VISIBLE_DEVICES=0 python main.py \
